@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-TODO: Check if generic file for updated version exists before downloading
+TODO:
 
 """
 
@@ -67,14 +67,14 @@ class Tool:
         self.soup = self.connect_to_link()
 
         self.name = kwargs.get("name")
-        self.version = kwargs.get("version") or 0
+        self.latest_version = kwargs.get("latest version") or 0
 
         self.type = self.get_tool_type()
         self.size = self.get_file_size()
         self.status = self.get_tool_security_status()
         self.windows_versions = self.get_windows_versions()
         self.website = self.get_product_website()
-        self.updated = kwargs.get("updated")
+        self.downloaded = kwargs.get("downloaded")
         self.rating = self.get_rating()
         self.file_type = self.get_file_type()
 
@@ -147,8 +147,8 @@ class Tool:
     def get_info(self):
         return {
             "name": self.name,
-            "version": self.version,
-            "updated": datetime.today().strftime("%B %d, %Y"),
+            "latest version": self.latest_version,
+            "downloaded": datetime.today().strftime("%B %d, %Y"),
             "link": self.link,
             "windows versions": self.windows_versions,
             "status": self.status,
@@ -173,7 +173,7 @@ class Tool:
 
         self.name = re.sub("\s+", " ", nav.replace(text_version or "", "").strip())
 
-        if version and (version > str(self.version)):
+        if version and (version > str(self.latest_version)):
             if self.status == "Disabled":
                 raise DisabledError
 
@@ -187,20 +187,22 @@ class Tool:
             else:
                 print(self.name)
 
-            self.version = version
-            self.download()
-            print(f"{self.name} version {self.version} was successfully downloaded.")
+            self.download(version)
+            self.latest_version = version
+            print(
+                f"{self.name} version {self.latest_version} was successfully downloaded."
+            )
         else:
             print("Up to date.")
 
-    def download(self):
+    def download(self, version):
         download_soup = BeautifulSoup(
             requests.get(self.link + "download/").text, "lxml"
         )
         download_url = download_soup.find(rel="nofollow noopener").get("href")
 
         path = f"./tools/{self.name}"
-        filename = f"{self.name} {self.version}"
+        filename = f"{self.name} {version}"
         filepath = f"{path}/{filename}"
         if not os.path.exists(os.path.dirname(filepath)):
             try:
@@ -231,13 +233,19 @@ class Tool:
             os.rename(filepath, filepath + ".exe")
 
     def __repr__(self):
-        s = self.name + "\nVersion:" + self.version + "\nUpdated:" + self.updated
+        s = (
+            self.name
+            + "\nVersion:"
+            + self.latest_version
+            + "\nDownloaded:"
+            + self.downloaded
+        )
         return s
 
 
 def dump_yaml(file, data):
     with open(file, "w") as f:
-        f.write(yaml.dump(data, Dumper=yaml.Dumper, default_flow_style=False))
+        f.write(yaml.dump(data, Dumper=yaml.Dumper))
 
 
 def load_yaml(file):
@@ -297,20 +305,19 @@ def main():
 
             try:
                 tool.check_for_update()
-            except FileExistsError:
+            except (VersionExistsError, FileExistsError):
                 print("Version appears to already be downloaded.")
+                dump_yaml(file, tools)
+                continue
             except DisabledError:
                 print("New version found, but download is disabled")
                 errors.append(f"{name} is disabled")
-            except VersionExistsError:
-                print("Version appears to already be downloaded.")
             except HTTPError as e:
                 print("Unknown connection error occured")
                 print(e)
                 errors.append(f"{name} had an unknown HTTPError")
 
             tools[name] = tool.get_info()
-
             dump_yaml(file, tools)
 
     try:
@@ -318,7 +325,10 @@ def main():
     except AttributeError:
         print("File info lost durring previous run, using backup")
         os.system("copy tools_info_backup.yml tools_info.yml")
-        run()
+        try:
+            run()
+        except AttributeError:
+            print("No tools detected.")
 
     os.system("copy tools_info.yml tools_info_backup.yml")
 
@@ -329,24 +339,3 @@ if __name__ == "__main__":
     main()
     print()
     print("Updater complete")
-
-
-# General Computer Shortcuts
-# Ninite Website
-# CrucialScan
-# DupeGuru
-# Frafs (Fraps) Bench Viewer
-# Hirens BootCD
-# LookInMyPC
-# MaxxMEM2
-# PerfMonitor2
-# PowerMAX
-# Procmon
-# Winaero
-# DoubleKiller
-# Geek Uninstaller
-# Hijack Hunter
-# phoronix test suite
-# Tech Tool Store
-# TrID - File Identifier
-# Ventoy
