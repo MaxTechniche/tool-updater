@@ -5,11 +5,14 @@ TODO:
 
 """
 
+import sys
+import argparse
 import os
 import errno
+import shutil
 import requests
 import filetype
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 import urllib.request
 from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
@@ -17,6 +20,17 @@ import yaml
 import lxml
 import re
 from datetime import datetime
+
+parser = argparse.ArgumentParser(description="Update tools")
+parser.add_argument("-f", type=str, default="toollist.yml", required=False, dest="file")
+parser.add_argument(
+    "--verify",
+    default=False,
+    required=False,
+    help="verify that the version is downloaded",
+    dest="verify",
+    action="store_true",
+)
 
 
 class Error(Exception):
@@ -61,12 +75,17 @@ class VersionExistsError(Error):
     pass
 
 
+class DownloadTooLargeError(Error):
+    """The file download is too large"""
+
+    pass
+
+
 class Tool:
     def __init__(self, **kwargs):
         self.link = kwargs.get("link")
         self.soup = self.connect_to_link()
 
-        self.name = kwargs.get("name")
         self.latest_version = kwargs.get("latest version") or 0
 
         self.type = self.get_tool_type()
@@ -77,6 +96,7 @@ class Tool:
         self.downloaded = kwargs.get("downloaded")
         self.rating = self.get_rating()
         self.file_type = self.get_file_type()
+        self.error = kwargs.get("error")
 
     def connect_to_link(self):
         """Connect to the link and get page html."""
@@ -144,11 +164,12 @@ class Tool:
     def get_file_type(self):
         pass
 
-    def get_info(self):
+    def get_info(self, update=True):
         return {
-            "name": self.name,
             "latest version": self.latest_version,
-            "downloaded": datetime.today().strftime("%B %d, %Y"),
+            "downloaded": self.downloaded
+            if (update and self.downloaded)
+            else datetime.today().strftime("%B %d, %Y"),
             "link": self.link,
             "windows versions": self.windows_versions,
             "status": self.status,
@@ -156,6 +177,7 @@ class Tool:
             "size": self.size,
             "type": self.type,
             "website": self.website,
+            "error": self.error,
         }
 
     def check_for_update(self):
@@ -173,6 +195,8 @@ class Tool:
 
         self.name = re.sub("\s+", " ", nav.replace(text_version or "", "").strip())
 
+        # print(version, self.latest_version)
+        # print(version > str(self.latest_version))
         if version and (version > str(self.latest_version)):
             if self.status == "Disabled":
                 raise DisabledError
@@ -186,14 +210,13 @@ class Tool:
                 print(size)
             else:
                 print(self.name)
-
-            self.download(version)
             self.latest_version = version
-            print(
-                f"{self.name} version {self.latest_version} was successfully downloaded."
-            )
+            self.download(version)
         else:
-            print("Up to date.")
+            if parser.parse_args().verify:
+                print("verifying download")
+                self.download(version)
+        print("Up to date")
 
     def download(self, version):
         download_soup = BeautifulSoup(
@@ -216,14 +239,27 @@ class Tool:
         for file in files:
             if os.path.splitext(file)[0] == filename:
                 raise VersionExistsError
+        print("Version not found on system, downloading...")
 
         req = Request(
             download_url,
             headers={"User-Agent": "Mozilla/5.0"},
         )
-        webpage = urlopen(req).read()
+
+        try:
+            webpage = urlopen(req)
+            webpage = webpage.read()
+        except OverflowError:
+            raise DownloadTooLargeError
+
         with open(filepath, "wb") as f:
             f.write(webpage)
+
+        # with requests.get(
+        #     download_url, stream=True, headers={"User-Agent": "Mozilla/5.0"}
+        # ) as r:
+        #     with open(filepath, "wb") as f:
+        #         shutil.copyfileobj(r.raw, f)
 
         kind = filetype.guess(filepath)
 
@@ -231,6 +267,7 @@ class Tool:
             os.rename(filepath, filepath + "." + kind.extension.lower())
         else:
             os.rename(filepath, filepath + ".exe")
+        print(f"{self.name} version {self.latest_version} was successfully downloaded.")
 
     def __repr__(self):
         s = (
@@ -275,16 +312,21 @@ def check_connection_to_filehorse(url):
     return response
 
 
+def sort_tools(file):
+    dump_yaml(file, load_yaml(file))
+
+
 def main():
 
     url = "https://www.filehorse.com/"
     check_connection_to_filehorse(url)
 
-    errors = ["Errors:"]
+    errors = []
 
-    file = "./tools_info.yml"
+    file = "./toollist.yml"
 
     def run():
+        sort_tools(file)
         tools = load_yaml(file)
         for name, info in tools.items():
             print("-----------------------------------------")
@@ -299,7 +341,8 @@ def main():
             except ConnectionError as ce:
                 print("Possible Broken Link")
                 print("Unable to continue!")
-                tools[name]["ERROR"] = "Broken or mistyped link"
+                tool.error = "Unknown link error: %s" % ce
+                errors.append(tool)
                 dump_yaml(file, tools)
                 continue
 
@@ -307,15 +350,29 @@ def main():
                 tool.check_for_update()
             except (VersionExistsError, FileExistsError):
                 print("Version appears to already be downloaded.")
+                tools[name] = tool.get_info(update=False)
+
                 dump_yaml(file, tools)
                 continue
             except DisabledError:
                 print("New version found, but download is disabled")
-                errors.append(f"{name} is disabled")
-            except HTTPError as e:
+                tool.error = "Download is disabled"
+                errors.append(tool)
+            except DownloadTooLargeError as e:
+                print("File is too large to download.")
+                print(e)
+                tool.error = "Too large to download: %s" % e
+                errors.append(tool)
+                tools[name] = tool.get_info(update=False)
+            except (HTTPError, URLError) as e:
                 print("Unknown connection error occured")
                 print(e)
-                errors.append(f"{name} had an unknown HTTPError")
+                tool.error = "Unknown error: %s" % e
+                errors.append(tool)
+                tools[name] = tool.get_info(update=False)
+
+                dump_yaml(file, tools)
+                continue
 
             tools[name] = tool.get_info()
             dump_yaml(file, tools)
@@ -323,16 +380,37 @@ def main():
     try:
         run()
     except AttributeError:
-        print("File info lost durring previous run, using backup")
-        os.system("copy tools_info_backup.yml tools_info.yml")
+        os.system("copy toollist_backup.yml toollist.yml")
         try:
             run()
         except AttributeError:
             print("No tools detected.")
 
-    os.system("copy tools_info.yml tools_info_backup.yml")
+    os.system("copy toollist.yml toollist_backup.yml")
 
-    print(*errors, sep="\n")
+    if errors:
+        print("Errors:")
+        print(*[(tool.name, tool.error) for tool in errors], sep="\n")
+
+        delete = (
+            input(
+                "Would you like to remove any of these programs from the tool list?: y/[n]"
+            )
+            or "n"
+        )
+        if delete.lower() == "y":
+            tools = load_yaml(file)
+            for tool in errors:
+                delete = (
+                    input(f"Would you like to remove {tool.name}? y/[n]: ").lower()
+                    or "n"
+                )
+                if delete.lower() == "y":
+                    deleted_tool = tools.pop(tool.name)
+                    print(f"Removed {tool.name} from tool list.")
+                    print()
+            dump_yaml(file, tools)
+            os.system("copy toollist.yml toollist_backup.yml")
 
 
 if __name__ == "__main__":
