@@ -31,6 +31,16 @@ parser.add_argument(
     dest="verify",
     action="store_true",
 )
+parser.add_argument(
+    "--skip-remove",
+    default=False,
+    required=False,
+    help="remove tools from update list that have errors",
+    dest="skip_remove",
+    action="store_true",
+)
+path = sys.argv[0]
+print(os.path.split(path))
 
 
 class Error(Exception):
@@ -282,7 +292,7 @@ class Tool:
 
 def dump_yaml(file, data):
     with open(file, "w") as f:
-        f.write(yaml.dump(data, Dumper=yaml.Dumper))
+        f.write(yaml.safe_dump(data))
 
 
 def load_yaml(file):
@@ -322,17 +332,18 @@ def main():
     check_connection_to_filehorse(url)
 
     errors = []
-
-    file = "./toollist.yml"
+    path = os.path.split(sys.argv[0])[0]
+    file = "toollist.yml"
+    file_path = "\\".join([path, file])
 
     def run():
-        sort_tools(file)
-        tools = load_yaml(file)
+        sort_tools(file_path)
+        tools = load_yaml(file_path)
         for name, info in tools.items():
             print("-----------------------------------------")
             print(f"Checking {name}...")
             if not info:
-                dump_yaml(file, tools)
+                dump_yaml(file_path, tools)
                 continue
 
             try:
@@ -343,7 +354,7 @@ def main():
                 print("Unable to continue!")
                 tool.error = "Unknown link error: %s" % ce
                 errors.append(tool)
-                dump_yaml(file, tools)
+                dump_yaml(file_path, tools)
                 continue
 
             try:
@@ -352,7 +363,7 @@ def main():
                 print("Version appears to already be downloaded.")
                 tools[name] = tool.get_info(update=False)
 
-                dump_yaml(file, tools)
+                dump_yaml(file_path, tools)
                 continue
             except DisabledError:
                 print("New version found, but download is disabled")
@@ -371,11 +382,11 @@ def main():
                 errors.append(tool)
                 tools[name] = tool.get_info(update=False)
 
-                dump_yaml(file, tools)
+                dump_yaml(file_path, tools)
                 continue
 
             tools[name] = tool.get_info()
-            dump_yaml(file, tools)
+            dump_yaml(file_path, tools)
 
     try:
         run()
@@ -392,25 +403,26 @@ def main():
         print("Errors:")
         print(*[(tool.name, tool.error) for tool in errors], sep="\n")
 
-        delete = (
-            input(
-                "Would you like to remove any of these programs from the tool list?: y/[n]"
-            )
-            or "n"
-        )
-        if delete.lower() == "y":
-            tools = load_yaml(file)
-            for tool in errors:
-                delete = (
-                    input(f"Would you like to remove {tool.name}? y/[n]: ").lower()
-                    or "n"
+        if not parser.parse_args().skip_remove:
+            delete = (
+                input(
+                    "Would you like to remove any of these programs from the tool list?: y/[n]"
                 )
-                if delete.lower() == "y":
-                    deleted_tool = tools.pop(tool.name)
-                    print(f"Removed {tool.name} from tool list.")
-                    print()
-            dump_yaml(file, tools)
-            os.system("copy toollist.yml toollist_backup.yml")
+                or "n"
+            )
+            if delete.lower() == "y":
+                tools = load_yaml(file_path)
+                for tool in errors:
+                    delete = (
+                        input(f"Would you like to remove {tool.name}? y/[n]: ").lower()
+                        or "n"
+                    )
+                    if delete.lower() == "y":
+                        deleted_tool = tools.pop(tool.name)
+                        print(f"Removed {tool.name} from tool list.")
+                        print()
+                dump_yaml(file_path, tools)
+                os.system("copy toollist.yml toollist_backup.yml")
 
 
 if __name__ == "__main__":
