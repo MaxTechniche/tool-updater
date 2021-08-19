@@ -14,6 +14,11 @@ import requests
 import filetype
 from urllib.error import HTTPError, URLError
 import urllib.request
+
+import ssl
+
+ssl._create_default_https_context = ssl._create_unverified_context
+
 from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
 import yaml
@@ -24,10 +29,13 @@ from datetime import datetime
 parser = argparse.ArgumentParser(description="Update tools")
 parser.add_argument("-f", type=str, default="toollist.yml", required=False, dest="file")
 parser.add_argument(
+    "-b", type=str, default="toollist_backup.yml", required=False, dest="backup"
+)
+parser.add_argument(
     "--verify",
     default=False,
     required=False,
-    help="verify that the version is downloaded",
+    help="verify that the latest version is downloaded",
     dest="verify",
     action="store_true",
 )
@@ -40,7 +48,6 @@ parser.add_argument(
     action="store_true",
 )
 path = sys.argv[0]
-print(os.path.split(path))
 
 
 class Error(Exception):
@@ -333,8 +340,18 @@ def main():
 
     errors = []
     path = os.path.split(sys.argv[0])[0]
-    file = "toollist.yml"
-    file_path = "\\".join([path, file])
+    file = parser.parse_args().file
+    file_path = os.path.join(path, file)
+    backup = parser.parse_args().backup
+    backup_path = os.path.join(path, backup)
+
+    if file not in os.listdir():
+        with open(file_path, "w") as f:
+            f.write("none:")
+
+    if backup not in os.listdir():
+        with open(backup_path, "w") as f:
+            f.write("none:")
 
     def run():
         sort_tools(file_path)
@@ -391,13 +408,15 @@ def main():
     try:
         run()
     except AttributeError:
-        os.system("copy toollist_backup.yml toollist.yml")
+        shutil.copyfile(backup_path, file_path)
+        # os.system("copy toollist_backup.yml toollist.yml")
         try:
             run()
         except AttributeError:
             print("No tools detected.")
 
-    os.system("copy toollist.yml toollist_backup.yml")
+    shutil.copyfile(file_path, backup_path)
+    # os.system("copy toollist.yml toollist_backup.yml")
 
     if errors:
         print("Errors:")
@@ -422,7 +441,8 @@ def main():
                         print(f"Removed {tool.name} from tool list.")
                         print()
                 dump_yaml(file_path, tools)
-                os.system("copy toollist.yml toollist_backup.yml")
+                shutil.copyfile(file_path, backup_path)
+                # os.system("copy toollist.yml toollist_backup.yml")
 
 
 if __name__ == "__main__":

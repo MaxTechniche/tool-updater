@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 
+"""
+TODO: 
+
+"""
+
 import os
 import re
+import sys
 import requests
+import argparse
 from bs4 import BeautifulSoup
+import ssl
 
+ssl._create_default_https_context = ssl._create_unverified_context
 
 FILEHORSE_SEARCH = "https://www.filehorse.com/search?q="
+
+parser = argparse.ArgumentParser(description="Update tools")
+parser.add_argument("-f", type=str, default="toollist.yml", required=False, dest="file")
 
 
 def query():
@@ -40,7 +52,7 @@ def get_tool_info(tool):
     return {"name": name, "desc": desc, "link": link}
 
 
-def add_tool_to_tool_list(tool):
+def add_tool_to_tool_list(tool, file_path):
     print("Adding tool to tool list...")
 
     nav = next(
@@ -57,8 +69,8 @@ def add_tool_to_tool_list(tool):
         name = tool["name"]
 
     try:
-        with open("./toollist.yml", "a") as tl:
-            tl.write("%s: {link: %s}\n" % (name, tool["link"]))
+        with open(file_path, "a") as f:
+            f.write("%s: {link: %s}\n" % (name, tool["link"]))
         print(f"{name} added to tool list.")
     except Exception as e:
         print(e)
@@ -84,6 +96,11 @@ def ask_user_if_update():
 
 
 def main():
+
+    path = os.path.split(sys.argv[0])[0]
+    file = parser.parse_args().file
+    file_path = os.path.join(path, file)
+
     added_tools = []
     # query until no input
     querying = True
@@ -108,7 +125,7 @@ def main():
                 or "y"
             ) == "y":
                 added_tools.append(tool["name"])
-                add_tool_to_tool_list(tool)
+                add_tool_to_tool_list(tool, file_path)
 
             # elif (
             #     input("Would you like to download this tool just one time? [y]/n: ")
@@ -124,9 +141,6 @@ def main():
     )
     if update_ == "y":
         os.system("python update.py")
-    # TODO: Ask the user if they would like to then update the tools.
-
-    #
 
 
 if __name__ == "__main__":
