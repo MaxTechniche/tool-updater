@@ -11,6 +11,10 @@ pyyaml = "*"
 lxml = "*"
 
 [dev-packages]
+black = "*"
 
 [requires]
-python_version = "3.8"
+python_version = "3"
+
+[pipenv]
+allow_prereleases = true

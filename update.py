@@ -98,6 +98,12 @@ class DownloadTooLargeError(Error):
     pass
 
 
+class RemoteDownloadError(Error):
+    """Download is not available on Filehorse.com"""
+
+    pass
+
+
 class Tool:
     def __init__(self, **kwargs):
         self.link = kwargs.get("link")
@@ -241,6 +247,11 @@ class Tool:
         )
         download_url = download_soup.find(rel="nofollow noopener").get("href")
 
+        download_style = download_soup.find("div", class_="dl-right")
+
+        if "external website" in download_style.text:
+            raise RemoteDownloadError
+
         path = f"./tools/{self.name}"
         filename = f"{self.name} {version}"
         filepath = f"{path}/{filename}"
@@ -340,16 +351,26 @@ def main():
 
     errors = []
     path = os.path.split(sys.argv[0])[0]
+    if not path:
+        path = os.getcwd()
+    print("Path:", path)
     file = parser.parse_args().file
     file_path = os.path.join(path, file)
+    print("File:", file)
+    print("File_path:", file_path)
     backup = parser.parse_args().backup
     backup_path = os.path.join(path, backup)
+    print("Backup:", backup)
+    print("Backup_path:", backup_path)
+    print()
 
-    if file not in os.listdir():
+    if file not in os.listdir(path):
+        print("No toollist found in current directory")
         with open(file_path, "w") as f:
             f.write("none:")
 
-    if backup not in os.listdir():
+    if backup not in os.listdir(path):
+        print("No backup found in current directory")
         with open(backup_path, "w") as f:
             f.write("none:")
 
@@ -386,12 +407,17 @@ def main():
                 print("New version found, but download is disabled")
                 tool.error = "Download is disabled"
                 errors.append(tool)
-            except DownloadTooLargeError as e:
+            except DownloadTooLargeError:
                 print("File is too large to download.")
-                print(e)
-                tool.error = "Too large to download: %s" % e
+                tool.error = "Too large to download"
                 errors.append(tool)
                 tools[name] = tool.get_info(update=False)
+            except RemoteDownloadError:
+                print("Tool is not available directly from Filehorse.")
+                tool.error = "Download not available directly from Filehorse"
+                errors.append(tool)
+                tools[name] = tool.get_info(update=False)
+
             except (HTTPError, URLError) as e:
                 print("Unknown connection error occured")
                 print(e)
@@ -407,7 +433,8 @@ def main():
 
     try:
         run()
-    except AttributeError:
+    except AttributeError as e:
+        print(e)
         shutil.copyfile(backup_path, file_path)
         # os.system("copy toollist_backup.yml toollist.yml")
         try:
