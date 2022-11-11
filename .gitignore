@@ -3,3 +3,5 @@ tools/
 *.yml
 tools.txt
 *.json
+.DS_Store
+
